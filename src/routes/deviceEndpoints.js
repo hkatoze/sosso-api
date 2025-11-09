@@ -4,7 +4,7 @@ const { ValidationError } = require("sequelize");
 const auth = require("../auth/auth");
 module.exports = (app) => {
   app.post("/api/v1/devices/register", auth, async (req, res) => {
-    const { device_uid, os } = req.body;
+    const { device_uid, os ,phone} = req.body;
 
     if (!device_uid) {
       return res.status(400).json({ message: "device_uid requis" });

@@ -4,12 +4,12 @@ async function sendVerificationCode(phone_number, verificationCode) {
   try {
     const url = "https://www.aqilas.com/api/v1/sms";
     const headers = {
-      "X-AUTH-TOKEN": '81fb066a-9e2d-4ed6-95dd-aa23c476d3e5',
+      "X-AUTH-TOKEN": "f094e085-6d96-4b3a-9ae5-a67925317b9a",
       "Content-Type": "application/json",
     };
 
     const data = {
-      from: "SUCCESS",
+      from: "SOSSO",
       text: `Code de confirmation: ${verificationCode}`,
       to: [`+226${phone_number}`],
     };

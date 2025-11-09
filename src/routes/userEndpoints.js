@@ -1,9 +1,47 @@
 const db = require("../db/sequelize");
 const { User, Device } = db.models;
+const {
+  generateVerificationCode,
+} = require("../utilsFunctions/generateVerificationCode");
+const {
+  sendVerificationCode,
+} = require("../utilsFunctions/sendVerificationCode");
 const { ValidationError, Op } = require("sequelize");
+
 const auth = require("../auth/auth");
 
 module.exports = (app) => {
+  app.post("/api/v1/users/otp", auth, async (req, res) => {
+    const { phone } = req.body;
+
+    if (!phone) {
+      return res
+        .status(400)
+        .json({ success: false, message: "phone sont requis." });
+    }
+
+    try {
+      // Génération d'un code de vérification unique
+      const verificationCode = generateVerificationCode();
+      // Envoi du code de vérification par téléphone
+      await sendVerificationCode(phone, verificationCode);
+
+      return res.status(200).json({
+        success: true,
+        message: "Code OTP généré avec succès.",
+        data: verificationCode,
+      });
+    } catch (error) {
+      if (error instanceof ValidationError) {
+        return res.status(400).json({ success: false, message: error.message });
+      }
+      res.status(500).json({
+        success: false,
+        message: "Erreur serveur lors de la génération du code OTP.",
+        data: error.message,
+      });
+    }
+  });
   app.post("/api/v1/users/register", auth, async (req, res) => {
     const { device_uid, phone } = req.body;
 
@@ -14,14 +52,6 @@ module.exports = (app) => {
     }
 
     try {
-      // Vérifie si ce numéro existe déjà
-      let existingUser = await User.findOne({ where: { phone } });
-      if (existingUser) {
-        return res
-          .status(409)
-          .json({ success: false, message: "Ce numéro est déjà enregistré." });
-      }
-
       // Cherche le device (lié à un utilisateur anonyme)
       const device = await Device.findOne({
         where: { device_uid },
