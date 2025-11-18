@@ -130,23 +130,32 @@ module.exports = (app) => {
 
       const reference= depositId;
       if (!reference)
-        return res
+       {
+        console.log("Référence manquante.");
+
+         return res
           .status(400)
           .json({ success: false, message: "Référence manquante." });
+       }
 
       const transaction = await Transaction.findOne({ where: { reference } });
       if (!transaction)
+      {
+         console.log("Transaction introuvable.");
         return res
           .status(404)
           .json({ success: false, message: "Transaction introuvable." });
+      }
 
       if (status !== "COMPLETED") {
+        console.log("Le PAYIN non aboutit.");
         return res.status(400).json({
           success: false,
           message: "Le PAYIN non aboutit.",
         });
       }
 
+      console.log("SUCCESS_PAYIN.");
       await transaction.update({
         status: "success_payin",
         provider_reference: providerTransactionId,
@@ -158,7 +167,7 @@ module.exports = (app) => {
       );
 
       const payoutPayload = {
-        payoutId: transaction.reference + "-OUT",
+        payoutId: transaction.reference.slice(0, 32)+ "-OUT",
         amount: parseFloat(transaction.amount).toString(),
         currency: "XOF",
         recipient:{
@@ -175,6 +184,7 @@ module.exports = (app) => {
       const result = await afri.createPayout(payoutPayload);
 
       if (!result.success) {
+          console.log("FAILED_PAYOUT.");
         await transaction.update({
           status: "success_payin_failed_payout",
           metadata: result.data,
@@ -185,7 +195,7 @@ module.exports = (app) => {
           data: result.message,
         });
       }
-
+     console.log("SUCCESS_PAYIN_PROCESSING_PAYOUT.");
       await transaction.update({
         status: "success_payin_processing_payout",
         provider_reference: result.data.providerTransactionId,
