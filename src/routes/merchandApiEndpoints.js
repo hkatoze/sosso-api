@@ -17,6 +17,8 @@ async function _request({
   data = null,
   params = null,
 }) {
+
+    console.log(`Requête pour AGREGATEUR: ${base}${url}`);
   try {
     const res = await axios({
       method,
@@ -30,10 +32,10 @@ async function _request({
       timeout: 30000,
     });
 
-    return { success: true,data: res.body};
+    return { success: true,data: res.data};
   } catch (err) {
     // normalize error
-    const payload = err.response?.body || err.message;
+    const payload = err.response || err.message;
     console.error("Agregator request error:", payload);
     return {
       success: false,

@@ -26,7 +26,14 @@ module.exports = (sequelize, DataTypes) => {
           "processing",
           "success",
           "failed",
-          "refunded"
+          "refunded",
+          "processing_payin",
+          "success_payin",
+          "success_payin_failed_payout",
+          "success_payin_processing_payout",
+          "success_payin_success_payout"
+
+
         ),
         defaultValue: "pending",
       },

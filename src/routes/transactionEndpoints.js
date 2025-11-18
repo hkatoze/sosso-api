@@ -6,6 +6,7 @@ const auth = require("../auth/auth");
 const { v4: uuidv4 } = require("uuid");
 const afri = require("../routes/merchandApiEndpoints");
 const { triggerPayout } = require("../utilsFunctions/transactionsTrigger");
+const { matchingOperator } = require("../utilsFunctions/matchingOperator");
 module.exports = (app) => {
   // Étape 1: INITIER un transfert (PAYIN)
   app.post("/api/v1/transactions/", async (req, res) => {
@@ -33,7 +34,6 @@ module.exports = (app) => {
         });
       }
 
-      console.log("DONNEES RECUS:"+ req.body)
       // Récupérer les opérateurs
       const senderOperator = await Operator.findByPk(sender_operator_id);
       const receiverOperator = await Operator.findByPk(receiver_operator_id);
@@ -45,7 +45,7 @@ module.exports = (app) => {
       }
 
       // Créer une référence unique
-      const reference = "TX-"+user_id+"-" + uuidv4().slice(0, 8).toUpperCase()+ "-IN";
+      const reference = uuidv4().slice(0, 36).toUpperCase();
       const fees = parseFloat(amount) * 0.01; // 1% pour l’instant
       const amount_received = parseFloat(amount) - fees;
 
@@ -74,14 +74,20 @@ module.exports = (app) => {
         payer:{
           type: "MMO",
             accountDetails: {
-                phoneNumber: sender_phone,
-                provider: senderOperator.short_code
+                phoneNumber: "226"+sender_phone,
+                provider: matchingOperator(senderOperator.short_code)
             }
-        }
+        },
+
        
       };
 
+
+
+
+
       const result = await afri.createPayin(payinPayload);
+      console.log(result);
 
       if (!result.success) {
         transaction.status = "failed";
@@ -158,10 +164,11 @@ module.exports = (app) => {
         recipient:{
           type: "MMO",
             accountDetails: {
-                phoneNumber: transaction.receiver_phone,
-                provider: receiverOperator.short_code
+                phoneNumber: "226"+transaction.receiver_phone,
+                provider: matchingOperator(receiverOperator.short_code)
             }
-        }
+        },
+
       
       };
 
