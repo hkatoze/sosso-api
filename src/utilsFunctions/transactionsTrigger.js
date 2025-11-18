@@ -1,6 +1,6 @@
 // services/transactionService.js
 const { Transaction, Operator } = require("../db/sequelize").models;
-const afri = require("../routes/afribapayEndpoints");
+const afri = require("../routes/merchandApiEndpoints");
 
 async function triggerPayout(transaction) {
   try {

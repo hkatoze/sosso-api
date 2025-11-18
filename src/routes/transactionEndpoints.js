@@ -3,13 +3,15 @@ const { Transaction, User, Operator, Device, ApiProvider } =
 const { ValidationError, Op } = require("sequelize");
 const auth = require("../auth/auth");
 const { v4: uuidv4 } = require("uuid");
-const afri = require("../routes/afribapayEndpoints");
+const afri = require("../routes/merchandApiEndpoints");
 const { triggerPayout } = require("../utilsFunctions/transactionsTrigger");
 module.exports = (app) => {
   // Étape 1: INITIER un transfert (PAYIN)
-  app.post("/api/v1/transactions/initiate", async (req, res) => {
+  app.post("/api/v1/transactions/", async (req, res) => {
     try {
       const {
+        user_id,
+        device_id,
         sender_operator_id,
         sender_phone,
         receiver_operator_id,
@@ -41,33 +43,38 @@ module.exports = (app) => {
       }
 
       // Créer une référence unique
-      const reference = "TX-" + uuidv4().slice(0, 8).toUpperCase();
+      const reference = "TX-"+user_id+"-" + uuidv4().slice(0, 8).toUpperCase()+ "-IN";
 
       // 1️⃣ Créer la transaction locale (status = pending)
       const transaction = await Transaction.create({
         reference,
+        user_id,
+        device_id,
         sender_operator_id,
         receiver_operator_id,
         sender_phone,
         receiver_phone,
         amount,
+        fees,
+        amount_received,
+        total_amount: parseFloat(amount) + fees,
         status: "pending",
+        transaction_datetime: new Date(),
       });
 
-      // 2️⃣ Appeler AfribaPAY → PAYIN
+      // 2️⃣ Appeler  PAYIN
       const payinPayload = {
-        operator: senderOperator.short_code, // ex: "orange"
-        country: "BF",
-        phone_number: sender_phone,
-        amount: parseFloat(amount),
+        depositId: reference,
+        amount: parseFloat(amount).toString(),
         currency: "XOF",
-        order_id: reference,
-        merchant_key: process.env.AFRIBAPAY_MERCHANT_KEY,
-        reference_id: reference,
-        lang: "fr",
-        return_url: process.env.AFRIBAPAY_RETURN_URL,
-        cancel_url: process.env.AFRIBAPAY_CANCEL_URL,
-        notify_url: process.env.AFRIBAPAY_WEBHOOK_URL,
+        payer:{
+          type: "MMO",
+            accountDetails: {
+                phoneNumber: sender_phone,
+                provider: senderOperator.short_code
+            }
+        }
+       
       };
 
       const result = await afri.createPayin(payinPayload);
@@ -77,16 +84,16 @@ module.exports = (app) => {
         await transaction.save();
         return res.status(500).json({
           success: false,
-          message: "Échec du PAYIN via AfribaPAY",
+          message: "Échec du PAYIN",
           error: result.message,
         });
       }
 
       // 3️⃣ Mise à jour transaction locale avec les infos AfribaPAY
       await transaction.update({
-        provider_reference: result.data.transaction_id,
+        provider_reference: result.data.providerTransactionId,
         metadata: result.data,
-        status: "processing",
+        status: "processing_payin",
       });
 
       return res.status(201).json({
@@ -105,9 +112,13 @@ module.exports = (app) => {
     }
   });
 
-  app.post("/api/v1/transactions/complete", async (req, res) => {
+  app.post("/api/v1/transactions/complete/payin", async (req, res) => {
     try {
-      const { reference } = req.body;
+
+      // 4 Ecouter le Rappel
+      const { depositId, status,providerTransactionId} = req.body;
+
+      const reference= depositId;
       if (!reference)
         return res
           .status(400)
@@ -119,38 +130,42 @@ module.exports = (app) => {
           .status(404)
           .json({ success: false, message: "Transaction introuvable." });
 
-      if (transaction.status !== "success_payin") {
+      if (status !== "COMPLETED") {
         return res.status(400).json({
           success: false,
-          message: "Le PAYIN doit être validé avant le PAYOUT.",
+          message: "Le PAYIN non aboutit.",
         });
       }
 
-      // Récupérer opérateur du receveur
+      await transaction.update({
+        status: "success_payin",
+        provider_reference: providerTransactionId,
+      });
+
+    // 5 Appeler  PAYOUT
       const receiverOperator = await Operator.findByPk(
         transaction.receiver_operator_id
       );
 
       const payoutPayload = {
-        operator: receiverOperator.short_code,
-        country: "BF",
-        phone_number: transaction.receiver_phone,
-        amount: parseFloat(transaction.amount),
+        payoutId: transaction.reference + "-OUT",
+        amount: parseFloat(transaction.amount).toString(),
         currency: "XOF",
-        order_id: transaction.reference + "-OUT",
-        merchant_key: process.env.AFRIBAPAY_MERCHANT_KEY,
-        reference_id: transaction.reference,
-        lang: "fr",
-        return_url: process.env.AFRIBAPAY_RETURN_URL,
-        cancel_url: process.env.AFRIBAPAY_CANCEL_URL,
-        notify_url: process.env.AFRIBAPAY_WEBHOOK_URL,
+        recipient:{
+          type: "MMO",
+            accountDetails: {
+                phoneNumber: transaction.receiver_phone,
+                provider: receiverOperator.short_code
+            }
+        }
+      
       };
 
       const result = await afri.createPayout(payoutPayload);
 
       if (!result.success) {
         await transaction.update({
-          status: "failed_payout",
+          status: "success_payin_failed_payout",
           metadata: result.data,
         });
         return res.status(500).json({
@@ -161,8 +176,8 @@ module.exports = (app) => {
       }
 
       await transaction.update({
-        status: "processing_payout",
-        provider_reference: result.data.transaction_id,
+        status: "success_payin_processing_payout",
+        provider_reference: result.data.providerTransactionId,
         metadata: result.data,
       });
 
@@ -181,123 +196,58 @@ module.exports = (app) => {
     }
   });
 
-  app.post(
-    "/api/v1/afribapay/webhook",
-    require("body-parser").raw({ type: "application/json" }),
-    async (req, res) => {
-      try {
-        const signature = req.headers["afribapay-sign"];
-        const raw = req.body.toString("utf-8");
-        const verified = afri.verifyWebhookSignature(
-          raw,
-          process.env.AFRIBAPAY_API_TOKEN,
-          signature
-        );
 
-        if (!verified) return res.status(403).send("Invalid signature");
 
-        const payload = JSON.parse(raw);
-        const { order_id, status } = payload;
-        console.log("[AFRIBAPAY] Webhook reçu:", order_id, status);
-
-        const transaction = await Transaction.findOne({
-          where: { reference: order_id },
-        });
-
-        if (!transaction)
-          return res.status(404).send("Transaction non trouvée");
-
-        // 1️⃣ Màj du statut local
-        await transaction.update({
-          status: status.toLowerCase(),
-          metadata: payload,
-        });
-
-        // 2️⃣ Si c'est un succès PAYIN → lancer automatiquement le PAYOUT
-        if (status === "SUCCESS" && !order_id.endsWith("-OUT")) {
-          console.log(
-            "[AFRIBAPAY] PAYIN réussi. Déclenchement automatique du PAYOUT…"
-          );
-          await triggerPayout(transaction);
-        }
-
-        return res.status(200).send("OK");
-      } catch (err) {
-        console.error("Erreur webhook:", err);
-        return res.status(500).send("Erreur serveur");
-      }
-    }
-  );
-  /**
-   * =====================================================
-   *  POST /api/v1/transactions
-   * =====================================================
-   *  - Crée une nouvelle transaction
-   */
-  app.post("/api/v1/transactions", auth, async (req, res) => {
+app.post("/api/v1/transactions/complete/payout", async (req, res) => {
     try {
-      const {
-        user_id,
-        device_id,
-        sender_operator_id,
-        sender_phone,
-        receiver_operator_id,
-        receiver_phone,
-        amount,
-      } = req.body;
 
-      if (
-        !sender_operator_id ||
-        !receiver_operator_id ||
-        !sender_phone ||
-        !receiver_phone ||
-        !amount
-      ) {
+      // 4 Ecouter le Rappel
+      const { payoutId, status,providerTransactionId} = req.body;
+
+      const reference= payoutId;
+      if (!reference)
+        return res
+          .status(400)
+          .json({ success: false, message: "Référence manquante." });
+
+      const transaction = await Transaction.findOne({ where: { reference } });
+      if (!transaction)
+        return res
+          .status(404)
+          .json({ success: false, message: "Transaction introuvable." });
+
+      if (status !== "COMPLETED") {
         return res.status(400).json({
           success: false,
-          message:
-            "Champs obligatoires manquants : sender_operator_id, receiver_operator_id, sender_phone, receiver_phone, amount.",
+          message: "Echec de PAYOUT",
         });
       }
 
-      const fees = parseFloat(amount) * 0.01; // 1% pour l’instant
-      const amount_received = parseFloat(amount) - fees;
-      const reference = "TX-" + uuidv4().slice(0, 8).toUpperCase();
-
-      const transaction = await Transaction.create({
-        reference,
-        user_id,
-        device_id,
-        sender_operator_id,
-        receiver_operator_id,
-        sender_phone,
-        receiver_phone,
-        amount,
-        fees,
-        amount_received,
-        total_amount: parseFloat(amount) + fees,
-        status: "pending",
-        transaction_datetime: new Date(),
+      await transaction.update({
+        status: "success_payin_success_payout",
+        provider_reference: transaction.id,
       });
 
-      return res.status(201).json({
+      return res.status(200).json({
         success: true,
-        message: "Transaction créée avec succès.",
+        message: "Payin & Payout réussie",
         data: transaction,
       });
     } catch (error) {
-      console.error("Erreur /transactions POST:", error);
-      if (error instanceof ValidationError) {
-        return res.status(400).json({ success: false, message: error.message });
-      }
-      return res.status(500).json({
+      console.error("Erreur /transactions/complete:", error);
+      res.status(500).json({
         success: false,
-        message: "Erreur serveur lors de la création de la transaction.",
+        message: "Erreur serveur lors du PAYOUT.",
         data: error.message,
       });
     }
   });
+  
 
+
+  app.post("/api/v1/transactions/complete/refund", async (req, res) => {
+    
+  });
   /**
    * =====================================================
    *  GET /api/v1/transactions
