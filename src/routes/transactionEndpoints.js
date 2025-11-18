@@ -150,11 +150,30 @@ module.exports = (app) => {
       }
 
       if (status !== "COMPLETED") {
-        console.log("Le PAYIN non aboutit.");
+       if(status=="ACCEPTED"){
+            console.log("PAYIN ",status);
+        return res.status(200).json({
+          success: true,
+          message: "PAYIN "+status,
+        });
+       }
+       if(status=="SUBMITTED"){
+             console.log("PAYIN ",status);
+        return res.status(200).json({
+          success: false,
+           message: "PAYIN "+status,
+        });
+
+       }
+
+       if (status=="FAILED"){
+        console.log("PAYIN ",status);
         return res.status(400).json({
           success: false,
-          message: "Le PAYIN non aboutit.",
+         message: "PAYIN "+status,
         });
+        }
+       
       }
 
       console.log("SUCCESS_PAYIN.");
@@ -197,6 +216,8 @@ module.exports = (app) => {
           data: result.message,
         });
       }
+
+    
      console.log("SUCCESS_PAYIN_PROCESSING_PAYOUT.");
       await transaction.update({
         status: "success_payin_processing_payout",
@@ -247,11 +268,36 @@ app.post("/api/v1/transactions/complete/payout", async (req, res) => {
 
       if (status !== "COMPLETED") {
 
-         console.log("PAYOUT FAILED.")
+        if(status=="ACCEPTED"){
+            console.log("PAYOUT ",status);
+        return res.status(200).json({
+          success: true,
+          message: "PAYOUT "+status,
+        });
+       }
+       if(status=="SUBMITTED"){
+             console.log("PAYOUT ",status);
+        return res.status(200).json({
+          success: false,
+           message: "PAYOUT "+status,
+        });
+
+       }
+       if(status=="ENQUEUED"){
+             console.log("PAYOUT ",status);
+        return res.status(200).json({
+          success: false,
+           message: "PAYOUT "+status,
+        });
+
+       }
+       if (status=="FAILED"){
+        console.log("PAYOUT ",status);
         return res.status(400).json({
           success: false,
-          message: "Echec de PAYOUT",
+         message: "PAYOUT "+status,
         });
+        }
       }
 
 
