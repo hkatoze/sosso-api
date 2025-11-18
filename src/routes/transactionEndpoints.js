@@ -229,23 +229,33 @@ app.post("/api/v1/transactions/complete/payout", async (req, res) => {
 
       const reference= payoutId;
       if (!reference)
-        return res
+   {
+         console.log("Référence manquante.");
+         return res
           .status(400)
           .json({ success: false, message: "Référence manquante." });
+   }
 
-      const transaction = await Transaction.findOne({ where: { reference } });
+      const transaction = await Transaction.findOne({ where: { reference : reference.toUpperCase()} });
       if (!transaction)
-        return res
+       {
+               console.log("Transaction introuvable.");
+         return res
           .status(404)
           .json({ success: false, message: "Transaction introuvable." });
+       }
 
       if (status !== "COMPLETED") {
+
+         console.log("PAYOUT FAILED.")
         return res.status(400).json({
           success: false,
           message: "Echec de PAYOUT",
         });
       }
 
+
+      console.log("SUCCESS_PAYIN_SUCCESS_PAYOUT.")
       await transaction.update({
         status: "success_payin_success_payout",
         provider_reference: transaction.id,
