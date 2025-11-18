@@ -169,7 +169,7 @@ module.exports = (app) => {
       );
 
       const payoutPayload = {
-        payoutId: transaction.reference.slice(0, 32)+ "-OUT",
+        payoutId: transaction.reference,
         amount: parseFloat(transaction.amount).toString(),
         currency: "XOF",
         recipient:{
