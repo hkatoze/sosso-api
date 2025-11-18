@@ -1,3 +1,4 @@
+
 const { Transaction, User, Operator, Device, ApiProvider } =
   require("../db/sequelize").models;
 const { ValidationError, Op } = require("sequelize");
@@ -44,6 +45,8 @@ module.exports = (app) => {
 
       // Créer une référence unique
       const reference = "TX-"+user_id+"-" + uuidv4().slice(0, 8).toUpperCase()+ "-IN";
+      const fees = parseFloat(amount) * 0.01; // 1% pour l’instant
+      const amount_received = parseFloat(amount) - fees;
 
       // 1️⃣ Créer la transaction locale (status = pending)
       const transaction = await Transaction.create({
