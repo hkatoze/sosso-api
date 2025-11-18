@@ -33,6 +33,7 @@ module.exports = (app) => {
         });
       }
 
+      console.log("DONNEES RECUS:"+ req.body)
       // Récupérer les opérateurs
       const senderOperator = await Operator.findByPk(sender_operator_id);
       const receiverOperator = await Operator.findByPk(receiver_operator_id);
