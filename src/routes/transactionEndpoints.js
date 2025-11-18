@@ -105,7 +105,7 @@ module.exports = (app) => {
         metadata: result.data,
         status: "processing_payin",
       });
-
+     console.log("REFERENCE CREE: "+reference);
       return res.status(201).json({
         success: true,
         message:
@@ -129,6 +129,8 @@ module.exports = (app) => {
       const { depositId, status,providerTransactionId} = req.body;
 
       const reference= depositId;
+
+
       if (!reference)
        {
         console.log("Référence manquante.");
@@ -137,7 +139,7 @@ module.exports = (app) => {
           .status(400)
           .json({ success: false, message: "Référence manquante." });
        }
-
+      console.log("REFERENCE RECU: "+reference);
       const transaction = await Transaction.findOne({ where: { reference } });
       if (!transaction)
       {
