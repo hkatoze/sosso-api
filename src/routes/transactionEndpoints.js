@@ -140,7 +140,7 @@ module.exports = (app) => {
           .json({ success: false, message: "Référence manquante." });
        }
       console.log("REFERENCE RECU: "+reference);
-      const transaction = await Transaction.findOne({ where: { reference } });
+      const transaction = await Transaction.findOne({ where: { reference: reference.toUpperCase() } });
       if (!transaction)
       {
          console.log("Transaction introuvable.");
