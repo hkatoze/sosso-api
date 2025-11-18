@@ -59,30 +59,7 @@ app.post("/api/v1/users/register", auth, async (req, res) => {
       include: [{ model: User, as: "user" }]
     });
 
-    // 2. Cas : device inconnu → nouveau téléphone
-    if (!device) {
-      // On cherche l'utilisateur par téléphone
-      const existingUser = await User.findOne({ where: { phone } });
-
-      if (!existingUser) {
-        return res.status(404).json({
-          success: false,
-          message: "Utilisateur introuvable pour ce numéro."
-        });
-      }
-
-      // On crée un nouveau device lié à cet user
-      device = await Device.create({
-        device_uid,
-        userId: existingUser.id
-      });
-
-      return res.status(200).json({
-        success: true,
-        message: "Connexion réussie (nouveau appareil).",
-        data: { user: existingUser }
-      });
-    }
+     
 
     // 3. Le device existe. On récupère l’utilisateur
     let user = device.user;

@@ -15,35 +15,28 @@ module.exports = (app) => {
       let user;
 
       if (!device) {
-        //Crée un utilisateur anonyme
-        user = await User.create({
-          is_anonymous: true,
-          verified: false,
-        });
+        
 
         //Crée le device lié à ce user
         device = await Device.create({
           device_uid,
           os,
-          user_id: user.id,
         });
         return res.status(201).json({
           success: true,
           message: "Nouvelle connexion anonyme reussi.",
-          data: { device, user },
+          data: { device },
         });
       }
 
       // Si le device existe déjà → on met à jour les infos
       device.os = os || device.os;
       await device.save();
-      // Récupère le user associé
-      user = await User.findByPk(device.user_id);
 
       return res.status(200).json({
         success: true,
         message: "Connexion reconnue avec succès.",
-        data: { device, user },
+        data: { device },
       });
     } catch (error) {
       console.error("Erreur de connexion :", error);
