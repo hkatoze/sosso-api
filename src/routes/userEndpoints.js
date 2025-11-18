@@ -42,38 +42,60 @@ module.exports = (app) => {
       });
     }
   });
-  app.post("/api/v1/users/register", auth, async (req, res) => {
-    const { device_uid, phone } = req.body;
+app.post("/api/v1/users/register", auth, async (req, res) => {
+  const { device_uid, phone } = req.body;
 
-    if (!device_uid || !phone) {
-      return res
-        .status(400)
-        .json({ success: false, message: "device_uid et phone sont requis." });
-    }
+  if (!device_uid || !phone) {
+    return res.status(400).json({
+      success: false,
+      message: "device_uid et phone sont requis."
+    });
+  }
 
-    try {
-      // Cherche le device (lié à un utilisateur anonyme)
-      const device = await Device.findOne({
-        where: { device_uid },
-        include: [{ model: User, as: "user" }],
+  try {
+    // 1. Récupérer le device
+    let device = await Device.findOne({
+      where: { device_uid },
+      include: [{ model: User, as: "user" }]
+    });
+
+    // 2. Cas : device inconnu → nouveau téléphone
+    if (!device) {
+      // On cherche l'utilisateur par téléphone
+      const existingUser = await User.findOne({ where: { phone } });
+
+      if (!existingUser) {
+        return res.status(404).json({
+          success: false,
+          message: "Utilisateur introuvable pour ce numéro."
+        });
+      }
+
+      // On crée un nouveau device lié à cet user
+      device = await Device.create({
+        device_uid,
+        userId: existingUser.id
       });
 
-      if (!device) {
-        return res.status(404).json({
-          success: false,
-          message: "Device non trouvé. Impossible d'enregistrer l'utilisateur.",
-        });
-      }
+      return res.status(200).json({
+        success: true,
+        message: "Connexion réussie (nouveau appareil).",
+        data: { user: existingUser }
+      });
+    }
 
-      const user = device.user;
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "Aucun utilisateur associé à ce device.",
-        });
-      }
+    // 3. Le device existe. On récupère l’utilisateur
+    let user = device.user;
 
-      // Met à jour les infos utilisateur
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "Aucun utilisateur associé à ce device."
+      });
+    }
+
+    // 4. Cas : utilisateur anonyme → on l’enregistre
+    if (user.is_anonymous === true) {
       user.phone = phone;
       user.is_anonymous = false;
       user.verified = true;
@@ -82,20 +104,28 @@ module.exports = (app) => {
       return res.status(200).json({
         success: true,
         message: "Utilisateur enregistré avec succès.",
-        data: { user },
-      });
-    } catch (error) {
-      console.error("Erreur /register :", error);
-      if (error instanceof ValidationError) {
-        return res.status(400).json({ success: false, message: error.message });
-      }
-      res.status(500).json({
-        success: false,
-        message: "Erreur serveur lors de l'enregistrement de l'utilisateur.",
-        data: error.message,
+        data: { user }
       });
     }
-  });
+
+    // 5. Cas : utilisateur déjà enregistré → simple connexion
+    return res.status(200).json({
+      success: true,
+      message: "Connexion réussie.",
+      data: { user }
+    });
+
+  } catch (error) {
+    console.error("Erreur /register :", error);
+    return res.status(500).json({
+      success: false,
+      message: "Erreur serveur.",
+      data: error.message
+    });
+  }
+});
+
+
 
   app.get("/api/v1/users/:id", auth, async (req, res) => {
     try {
