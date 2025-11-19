@@ -122,206 +122,192 @@ module.exports = (app) => {
     }
   });
 
-  app.post("/api/v1/transactions/complete/payin", async (req, res) => {
-    try {
+app.post("/api/v1/transactions/complete/payin", async (req, res) => {
+  try {
+    const { depositId, status, providerTransactionId } = req.body;
+    const reference = depositId;
 
-      // 4 Ecouter le Rappel
-      const { depositId, status,providerTransactionId} = req.body;
+    if (!reference) {
+      console.log("Référence manquante.");
+      return res.status(400).json({ success: false, message: "Référence manquante." });
+    }
 
-      const reference= depositId;
+    console.log("REFERENCE RECU:", reference);
+    const transaction = await Transaction.findOne({ where: { reference: reference.toUpperCase() } });
 
+    if (!transaction) {
+      console.log("Transaction introuvable.");
+      return res.status(404).json({ success: false, message: "Transaction introuvable." });
+    }
 
-      if (!reference)
-       {
-        console.log("Référence manquante.");
+    // idempotence : si la transaction a déjà été traitée comme payin réussi, on ack sans relancer
+    const alreadyProcessed = ["success_payin", "success_payin_processing_payout", "success_payin_failed_payout", "success_payin_success_payout"]
+      .includes(transaction.status);
+    if (alreadyProcessed) {
+      console.log("Callback reçu pour transaction déjà traitée:", transaction.reference, transaction.status);
+      return res.status(200).json({ success: true, message: "Already processed", data: { status: transaction.status } });
+    }
 
-         return res
-          .status(400)
-          .json({ success: false, message: "Référence manquante." });
-       }
-      console.log("REFERENCE RECU: "+reference);
-      const transaction = await Transaction.findOne({ where: { reference: reference.toUpperCase() } });
-      if (!transaction)
-      {
-         console.log("Transaction introuvable.");
-        return res
-          .status(404)
-          .json({ success: false, message: "Transaction introuvable." });
-      }
+    const s = (status || "").toString().toUpperCase().trim();
 
-      if (status !== "COMPLETED") {
-       if(status=="ACCEPTED"){
-            console.log("PAYIN ",status);
-        return res.status(200).json({
-          success: true,
-          message: "PAYIN "+status,
-        });
-       }
-       if(status=="SUBMITTED"){
-             console.log("PAYIN ",status);
-        return res.status(200).json({
-          success: false,
-           message: "PAYIN "+status,
-        });
-
-       }
-
-       if (status=="FAILED"){
-        console.log("PAYIN ",status);
-        return res.status(400).json({
-          success: false,
-         message: "PAYIN "+status,
-        });
-        }
-       
-      }
-
-      console.log("SUCCESS_PAYIN.");
-      await transaction.update({
-        status: "success_payin",
-        provider_reference: providerTransactionId,
-      });
-
-    // 5 Appeler  PAYOUT
-      const receiverOperator = await Operator.findByPk(
-        transaction.receiver_operator_id
-      );
-
-      const payoutPayload = {
-        payoutId: transaction.reference,
-        amount: parseFloat(transaction.amount).toString(),
-        currency: "XOF",
-        recipient:{
-          type: "MMO",
-            accountDetails: {
-                phoneNumber: "226"+transaction.receiver_phone,
-                provider: matchingOperator(receiverOperator.short_code)
-            }
-        },
-
-      
-      };
-
-      const result = await afri.createPayout(payoutPayload);
-
-      if (!result.success) {
-          console.log("FAILED_PAYOUT.");
+    switch (s) {
+      case "ACCEPTED":
+        console.log("PAYIN", s);
+        // Acknowledge accepted; not final
+        await transaction.update({ provider_reference: providerTransactionId || transaction.provider_reference });
+        return res.status(200).json({ success: true, message: "PAYIN " + s });
+      case "SUBMITTED":
+        console.log("PAYIN", s);
+        return res.status(200).json({ success: false, message: "PAYIN " + s });
+      case "FAILED":
+        console.log("PAYIN", s);
+        await transaction.update({ status: "payin_failed", provider_reference: providerTransactionId || transaction.provider_reference });
+        return res.status(200).json({ success: false, message: "PAYIN " + s });
+      case "REJECTED":
+        console.log("PAYIN", s);
+        await transaction.update({ status: "payin_failed", provider_reference: providerTransactionId || transaction.provider_reference });
+        return res.status(200).json({ success: false, message: "PAYIN " + s });
+        
+      case "COMPLETED":
+        console.log("SUCCESS_PAYIN.");
         await transaction.update({
-          status: "success_payin_failed_payout",
-          metadata: result.data,
+          status: "success_payin",
+          provider_reference: providerTransactionId || transaction.provider_reference,
         });
-        return res.status(500).json({
-          success: false,
-          message: "Échec du PAYOUT.",
-          data: result.message,
-        });
+        break; // continuer pour déclencher le payout
+      default:
+        console.warn("Statut PAYIN inconnu:", status);
+        return res.status(400).json({ success: false, message: "Statut inconnu: " + status });
+    }
+
+    // --- créer le PAYOUT (après "COMPLETED")
+    const receiverOperator = await Operator.findByPk(transaction.receiver_operator_id);
+
+    const payoutPayload = {
+      payoutId: transaction.reference,
+      amount: parseFloat(transaction.amount).toString(),
+      currency: "XOF",
+      recipient: {
+        type: "MMO",
+        accountDetails: {
+          phoneNumber: "226" + transaction.receiver_phone,
+          provider: matchingOperator(receiverOperator.short_code)
+        }
       }
+    };
 
-    
-     console.log("SUCCESS_PAYIN_PROCESSING_PAYOUT.");
+    const result = await afri.createPayout(payoutPayload);
+
+    if (!result || !result.success) {
+      console.log("FAILED_PAYOUT.", result && result.message);
       await transaction.update({
-        status: "success_payin_processing_payout",
-        provider_reference: result.data.providerTransactionId,
-        metadata: result.data,
+        status: "success_payin_failed_payout",
+        metadata: result ? result.data : { error: "no result" }
       });
-
-      return res.status(200).json({
-        success: true,
-        message: "PAYOUT initié avec succès.",
-        data: result.data,
-      });
-    } catch (error) {
-      console.error("Erreur /transactions/complete:", error);
-      res.status(500).json({
+      return res.status(500).json({
         success: false,
-        message: "Erreur serveur lors du PAYOUT.",
-        data: error.message,
+        message: "Échec du PAYOUT.",
+        data: result ? result.message : "No result from payout"
       });
     }
-  });
 
+    console.log("SUCCESS_PAYIN_PROCESSING_PAYOUT.");
+    await transaction.update({
+      status: "success_payin_processing_payout",
+      provider_reference: result.data.providerTransactionId || transaction.provider_reference,
+      metadata: result.data
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "PAYOUT initié avec succès.",
+      data: result.data
+    });
+
+  } catch (error) {
+    console.error("Erreur /transactions/complete/payin:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Erreur serveur lors du PAYIN/PAYOUT.",
+      data: error.message
+    });
+  }
+});
 
 
 app.post("/api/v1/transactions/complete/payout", async (req, res) => {
-    try {
+  try {
+    const { payoutId, status, providerTransactionId } = req.body;
+    const reference = payoutId;
 
-      // 4 Ecouter le Rappel
-      const { payoutId, status,providerTransactionId} = req.body;
+    if (!reference) {
+      console.log("Référence manquante.");
+      return res.status(400).json({ success: false, message: "Référence manquante." });
+    }
 
-      const reference= payoutId;
-      if (!reference)
-   {
-         console.log("Référence manquante.");
-         return res
-          .status(400)
-          .json({ success: false, message: "Référence manquante." });
-   }
+    const transaction = await Transaction.findOne({ where: { reference: reference.toUpperCase() } });
+    if (!transaction) {
+      console.log("Transaction introuvable.");
+      return res.status(404).json({ success: false, message: "Transaction introuvable." });
+    }
 
-      const transaction = await Transaction.findOne({ where: { reference : reference.toUpperCase()} });
-      if (!transaction)
-       {
-               console.log("Transaction introuvable.");
-         return res
-          .status(404)
-          .json({ success: false, message: "Transaction introuvable." });
-       }
+    // idempotence : si déjà finalisé comme success_payin_success_payout, ack
+    if (transaction.status === "success_payin_success_payout") {
+      console.log("Payout callback pour transaction déjà finalisée:", transaction.reference);
+      return res.status(200).json({ success: true, message: "Already finalized", data: transaction });
+    }
 
-      if (status !== "COMPLETED") {
+    const s = (status || "").toString().toUpperCase().trim();
 
-        if(status=="ACCEPTED"){
-            console.log("PAYOUT ",status);
+    switch (s) {
+      case "ACCEPTED":
+        console.log("PAYOUT", s);
+        await transaction.update({ provider_reference: providerTransactionId || transaction.provider_reference });
+        return res.status(200).json({ success: true, message: "PAYOUT " + s });
+      case "SUBMITTED":
+      case "ENQUEUED":
+        console.log("PAYOUT", s);
+        return res.status(200).json({ success: false, message: "PAYOUT " + s });
+      case "FAILED":
+        console.log("PAYOUT", s);
+        await transaction.update({
+          status: "success_payin_failed_payout",
+          provider_reference: providerTransactionId || transaction.provider_reference
+        });
+        return res.status(200).json({ success: false, message: "PAYOUT " + s });
+
+      case "REJECTED":
+        console.log("PAYOUT", s);
+        await transaction.update({
+          status: "success_payin_failed_payout",
+          provider_reference: providerTransactionId || transaction.provider_reference
+        });
+        return res.status(200).json({ success: false, message: "PAYOUT " + s });
+      case "COMPLETED":
+        console.log("SUCCESS_PAYIN_SUCCESS_PAYOUT.");
+        await transaction.update({
+          status: "success_payin_success_payout",
+          provider_reference: providerTransactionId || transaction.provider_reference
+        });
         return res.status(200).json({
           success: true,
-          message: "PAYOUT "+status,
+          message: "Payin & Payout réussie",
+          data: transaction
         });
-       }
-       if(status=="SUBMITTED"){
-             console.log("PAYOUT ",status);
-        return res.status(200).json({
-          success: false,
-           message: "PAYOUT "+status,
-        });
-
-       }
-       if(status=="ENQUEUED"){
-             console.log("PAYOUT ",status);
-        return res.status(200).json({
-          success: false,
-           message: "PAYOUT "+status,
-        });
-
-       }
-       if (status=="FAILED"){
-        console.log("PAYOUT ",status);
-        return res.status(400).json({
-          success: false,
-         message: "PAYOUT "+status,
-        });
-        }
-      }
-
-
-      console.log("SUCCESS_PAYIN_SUCCESS_PAYOUT.")
-      await transaction.update({
-        status: "success_payin_success_payout",
-        provider_reference: transaction.id,
-      });
-
-      return res.status(200).json({
-        success: true,
-        message: "Payin & Payout réussie",
-        data: transaction,
-      });
-    } catch (error) {
-      console.error("Erreur /transactions/complete:", error);
-      res.status(500).json({
-        success: false,
-        message: "Erreur serveur lors du PAYOUT.",
-        data: error.message,
-      });
+      default:
+        console.warn("Statut PAYOUT inconnu:", status);
+        return res.status(400).json({ success: false, message: "Statut inconnu: " + status });
     }
-  });
-  
+
+  } catch (error) {
+    console.error("Erreur /transactions/complete/payout:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Erreur serveur lors du PAYOUT.",
+      data: error.message
+    });
+  }
+});
 
 
   app.post("/api/v1/transactions/complete/refund", async (req, res) => {
