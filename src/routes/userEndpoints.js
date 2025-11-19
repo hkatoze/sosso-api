@@ -78,8 +78,8 @@ app.post("/api/v1/users/register", auth, async (req, res) => {
     }
 
     // 4️⃣ Associer ce device au user si ce n'est pas déjà fait
-    if (device.userId !== user.id) {
-      device.userId = user.id;
+    if (device.user_id !== user.id) {
+      device.user_id = user.id;
        device.user_phone = user.phone;
       await device.save();
     }
