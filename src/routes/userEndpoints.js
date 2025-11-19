@@ -55,7 +55,7 @@ app.post("/api/v1/users/register", auth, async (req, res) => {
   try {
     // 1️⃣ Vérifier si le device existe (créé par un autre endpoint)
     let device = await Device.findOne({
-      where: { device_uid }
+      where: { id: device_uid }
     });
 
     if (!device) {
