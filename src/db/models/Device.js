@@ -16,6 +16,10 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.UUID,
       allowNull: true,
     },
+    user_phone: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
     os: {
       type: DataTypes.STRING,
       allowNull: true,

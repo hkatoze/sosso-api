@@ -53,7 +53,7 @@ app.post("/api/v1/users/register", auth, async (req, res) => {
   }
 
   try {
-    // 1️⃣ Vérifier si le device existe
+    // 1️⃣ Vérifier si le device existe (créé par un autre endpoint)
     let device = await Device.findOne({
       where: { device_uid }
     });
@@ -65,11 +65,11 @@ app.post("/api/v1/users/register", auth, async (req, res) => {
       });
     }
 
-    // 2️⃣ Vérifier si un user existe déjà avec ce phone
+    // 2️⃣ Chercher un utilisateur avec ce phone
     let user = await User.findOne({ where: { phone } });
 
+    // 3️⃣ Si l'utilisateur n'existe pas → on le crée
     if (!user) {
-      // 3️⃣ CAS 1 : Création d’un nouvel utilisateur
       user = await User.create({
         phone,
         is_anonymous: false,
@@ -77,17 +77,29 @@ app.post("/api/v1/users/register", auth, async (req, res) => {
       });
     }
 
-    // 4️⃣ Associer le device à ce user si pas déjà fait
+    // 4️⃣ Associer ce device au user si ce n'est pas déjà fait
     if (device.userId !== user.id) {
       device.userId = user.id;
+       device.user_phone = user.phone;
       await device.save();
     }
 
-    // 5️⃣ Réponse universelle : nouvel user OU connexion
+    // 5️⃣ Réassigner toutes les transactions du device (qui étaient anonymes)
+    await Transaction.update(
+      { user_id: user.id },
+      {
+        where: {
+          device_id: device.id,
+          user_id: null   // uniquement celles qui étaient anonymes
+        }
+      }
+    );
+
+    // 6️⃣ Réponse finale
     return res.status(200).json({
       success: true,
       message: "Opération réussie.",
-      data: { user }
+      data: { device }
     });
 
   } catch (error) {
@@ -99,7 +111,6 @@ app.post("/api/v1/users/register", auth, async (req, res) => {
     });
   }
 });
-
 
 
 

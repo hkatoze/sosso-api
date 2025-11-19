@@ -55,7 +55,7 @@ module.exports = (sequelize, DataTypes) => {
   );
 
   Transaction.associate = (models) => {
-    Transaction.belongsTo(models.User, { foreignKey: "user_id", as: "user" });
+   
     Transaction.belongsTo(models.Device, {
       foreignKey: "device_id",
       as: "device",
