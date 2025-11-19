@@ -83,9 +83,6 @@ module.exports = (app) => {
       };
 
 
-
-
-
       const result = await afri.createPayin(payinPayload);
       console.log(result);
 
@@ -97,6 +94,20 @@ module.exports = (app) => {
           message: "Échec du PAYIN",
           error: result.message,
         });
+      }
+
+      if(result.data.status =="REJECTED"){
+        await transaction.update({
+        provider_reference: result.data.providerTransactionId,
+        metadata: result.data,
+        status: "failed",
+      });
+      return res.status(201).json({
+        success: true,
+        message:
+          "PAYIN failed.",
+        data: result.data,
+      });
       }
 
       // 3️⃣ Mise à jour transaction locale avec les infos AfribaPAY
