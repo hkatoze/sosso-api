@@ -1,5 +1,5 @@
 const db = require("../db/sequelize");
-const { User, Device } = db.models;
+const { User, Device,Transaction } = db.models;
 const {
   generateVerificationCode,
 } = require("../utilsFunctions/generateVerificationCode");
