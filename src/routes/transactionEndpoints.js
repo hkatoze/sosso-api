@@ -375,6 +375,18 @@ app.post("/api/v1/transactions/complete/payout", async (req, res) => {
    * =====================================================
    *  - Récupère une transaction précise
    */
+const MAX_LIMIT = 5000;
+
+function parseLimit(value) {
+  if (!value) return null; // aucune limite
+
+  let limit = parseInt(value, 10);
+
+  if (isNaN(limit) || limit <= 0) return null;
+
+  return Math.min(limit, MAX_LIMIT);
+}
+
   app.get("/api/v1/transactions/:id", auth, async (req, res) => {
     try {
       const transaction = await Transaction.findByPk(req.params.id, {
