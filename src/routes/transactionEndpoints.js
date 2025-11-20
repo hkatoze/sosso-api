@@ -414,68 +414,70 @@ app.post("/api/v1/transactions/complete/payout", async (req, res) => {
    *  - Transactions d’un utilisateur enregistré
    */
   app.get("/api/v1/transactions/user/:userId", auth, async (req, res) => {
-    try {
-      const transactions = await Transaction.findAll({
-        where: { user_id: req.params.userId },
-        include: [
-          { model: Operator, as: "senderOperator" },
-          { model: Operator, as: "receiverOperator" },
-        ],
-        order: [["createdAt", "DESC"]],
-      });
+  try {
+    const limit = parseLimit(req.query.limit);
 
-      res.status(200).json({
-        success: true,
-        message: "Transactions de l'utilisateur récupérées avec succès.",
-        data: transactions,
-      });
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        message:
-          "Erreur serveur lors de la récupération des transactions utilisateur.",
-        data: error.message,
-      });
-    }
-  });
+    const transactions = await Transaction.findAll({
+      where: { user_id: req.params.userId },
+      include: [
+        { model: Operator, as: "senderOperator" },
+        { model: Operator, as: "receiverOperator" },
+      ],
+      order: [["createdAt", "DESC"]],
+      limit: limit || undefined,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Transactions récupérées.",
+      data: transactions,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Erreur lors de la récupération.",
+      data: error.message,
+    });
+  }
+});
+
 
   /**
    * =====================================================
    *  GET /api/v1/transactions/device/:deviceId
    * =====================================================
-   *  - Transactions liées à un appareil (utilisateur anonyme)
+
    */
-  app.get("/api/v1/transactions/device/:deviceId", auth, async (req, res) => {
-    try {
-      const transactions = await Transaction.findAll({
-        where: { device_id: req.params.deviceId },
-        include: [
-          { model: Operator, as: "senderOperator" },
-          { model: Operator, as: "receiverOperator" },
-        ],
-        order: [["createdAt", "DESC"]],
-      });
-      if (!transactions || transactions.length === 0) {
-        return res.status(200).json({
-          success: true,
-          message: "Aucune transacation trouvée.",
-          data: [],
-        });
-      }
-      res.status(200).json({
-        success: true,
-        message: "Transactions du device récupérées avec succès.",
-        data: transactions,
-      });
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        message:
-          "Erreur serveur lors de la récupération des transactions device.",
-        data: error.message,
-      });
-    }
-  });
+app.get("/api/v1/transactions/device/:deviceId", auth, async (req, res) => {
+  try {
+    const limit = parseLimit(req.query.limit);
+
+    const transactions = await Transaction.findAll({
+      where: { device_id: req.params.deviceId },
+      include: [
+        { model: Operator, as: "senderOperator" },
+        { model: Operator, as: "receiverOperator" },
+      ],
+      order: [["createdAt", "DESC"]],
+      limit: limit || undefined,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: transactions.length === 0 ?
+        "Aucune transaction trouvée." :
+        "Transactions récupérées.",
+      data: transactions,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Erreur lors de la récupération.",
+      data: error.message,
+    });
+  }
+});
+
 
   /**
    * =====================================================
