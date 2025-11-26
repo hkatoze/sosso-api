@@ -82,14 +82,14 @@ const initDb = async (opts = {}) => {
       await sequelize.sync({ alter, force });
       console.log("✅ Models synchronized");
 
-      // --- INITIAL DATA SEEDING ---
+// --- INITIAL DATA SEEDING ---
 const { PlatformFee, OperatorFee } = models;
 
 // Seed PlatformFee if empty
 const platformFeeCount = await PlatformFee.count();
 if (platformFeeCount === 0) {
   await PlatformFee.create({
-    fee_fixed: 50,     // TES TARIFS
+    fee_fixed: 50,     // TES TARIFS ACTUELS
     fee_percent: 1.2
   });
 
@@ -108,18 +108,19 @@ if (operatorFeeCount === 0) {
     "f529a5ff-ede4-414a-9f27-7d50c4537ea2", // Sank Money
   ];
 
-  // Génération auto de toutes les combinaisons FROM → TO
   const fees = [];
-  const OPERATOR_PERCENT = 4; // même taux pour tous
 
   for (const from of operators) {
     for (const to of operators) {
-      if (from === to) continue; // on ignore opérateur -> lui même
+
+      const feePercent = (from === to) 
+        ? 1   // 👉 1% pour même opérateur
+        : 4;  // 👉 4% pour opérateur différent
 
       fees.push({
         from_operator_id: from,
         to_operator_id: to,
-        fee_percent: OPERATOR_PERCENT,
+        fee_percent: feePercent,
         fee_fixed: 0
       });
     }
@@ -127,10 +128,11 @@ if (operatorFeeCount === 0) {
 
   await OperatorFee.bulkCreate(fees);
 
-  console.log("🌱 OperatorFees inserted (4% globally).");
+  console.log("🌱 OperatorFees inserted (1% same-op, 4% cross-op).");
 }
 
 console.log("🌱 Initial data seeding completed.");
+
 
     } else {
       console.log("ℹ️ sync skipped (use migrations in production)");
