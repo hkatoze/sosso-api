@@ -81,6 +81,57 @@ const initDb = async (opts = {}) => {
       // WARNING: alter = true will change tables to match models (use carefully)
       await sequelize.sync({ alter, force });
       console.log("✅ Models synchronized");
+
+      // --- INITIAL DATA SEEDING ---
+const { PlatformFee, OperatorFee } = models;
+
+// Seed PlatformFee if empty
+const platformFeeCount = await PlatformFee.count();
+if (platformFeeCount === 0) {
+  await PlatformFee.create({
+    fee_fixed: 50,     // TES TARIFS
+    fee_percent: 1.2
+  });
+
+  console.log("🌱 PlatformFee inserted.");
+}
+
+// Seed OperatorFee if empty
+const operatorFeeCount = await OperatorFee.count();
+if (operatorFeeCount === 0) {
+  // IDs de tes opérateurs
+  const operators = [
+    "021b76fb-2122-4f13-b116-ca3a84bc3cdf", // Moov Money
+    "192b3ec4-3162-4b28-85ba-67e5a3f256f8", // Wave
+    "37aa8ebc-61d7-4c37-bda1-8f18d1aad263", // Orange Money
+    "d325b806-8942-4671-a5eb-28afabe17cfd", // Télécel Money
+    "f529a5ff-ede4-414a-9f27-7d50c4537ea2", // Sank Money
+  ];
+
+  // Génération auto de toutes les combinaisons FROM → TO
+  const fees = [];
+  const OPERATOR_PERCENT = 4; // même taux pour tous
+
+  for (const from of operators) {
+    for (const to of operators) {
+      if (from === to) continue; // on ignore opérateur -> lui même
+
+      fees.push({
+        from_operator_id: from,
+        to_operator_id: to,
+        fee_percent: OPERATOR_PERCENT,
+        fee_fixed: 0
+      });
+    }
+  }
+
+  await OperatorFee.bulkCreate(fees);
+
+  console.log("🌱 OperatorFees inserted (4% globally).");
+}
+
+console.log("🌱 Initial data seeding completed.");
+
     } else {
       console.log("ℹ️ sync skipped (use migrations in production)");
     }

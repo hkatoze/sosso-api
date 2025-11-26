@@ -1,4 +1,3 @@
-// models/operator.js
 "use strict";
 module.exports = (sequelize, DataTypes) => {
   const Operator = sequelize.define("Operator", {
@@ -20,6 +19,7 @@ module.exports = (sequelize, DataTypes) => {
   });
 
   Operator.associate = (models) => {
+    // Relations avec les transactions
     Operator.hasMany(models.Transaction, {
       foreignKey: "sender_operator_id",
       as: "sentTransactions",
@@ -28,13 +28,16 @@ module.exports = (sequelize, DataTypes) => {
       foreignKey: "receiver_operator_id",
       as: "receivedTransactions",
     });
-    Operator.hasMany(models.Fee, {
+
+    // Relations avec les nouveaux frais : OperatorFee
+    Operator.hasMany(models.OperatorFee, {
       foreignKey: "from_operator_id",
-      as: "feesFrom",
+      as: "operatorFeesFrom",
     });
-    Operator.hasMany(models.Fee, {
+
+    Operator.hasMany(models.OperatorFee, {
       foreignKey: "to_operator_id",
-      as: "feesTo",
+      as: "operatorFeesTo",
     });
   };
 
