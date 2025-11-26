@@ -26,6 +26,7 @@ require("./src/routes/deviceEndpoints")(app);
 require("./src/routes/adminEndpoints")(app);
 require("./src/routes/operatorEndpoints")(app);
 require("./src/routes/transactionEndpoints")(app);
+require("./src/routes/feesEndpoints")(app);
 
 //404 error managment
 app.use(({ res }) => {
