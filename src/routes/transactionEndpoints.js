@@ -113,7 +113,7 @@ module.exports = (app) => {
       }
 
       if (result.data.status == "REJECTED") {
-        return res.status(201).json({
+        return res.status(500).json({
           success: true,
           message: "PAYIN failed.",
           data: result.data,
@@ -121,14 +121,14 @@ module.exports = (app) => {
       }
 
       if (result.data.response_code == "01") {
-           return res.status(201).json({
+           return res.status(500).json({
              success: true,
              message: "PAYIN failed.",
              data: result.data,
            });
          }
       // 1️⃣ Créer la transaction locale (status = pending)
-      const transaction = await Transaction.create({
+         await Transaction.create({
         reference,
         user_id,
         device_id,
@@ -209,7 +209,7 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
           provider_reference:
             providerTransactionId || transaction.provider_reference,
         });
-        return res.status(200).json({ success: false, message: "PAYIN " + s });
+        return res.status(500).json({ success: false, message: "PAYIN " + s });
       case "REJECTED":
         console.log("PAYIN", s);
         await transaction.update({
@@ -217,7 +217,7 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
           provider_reference:
             providerTransactionId || transaction.provider_reference,
         });
-        return res.status(200).json({ success: false, message: "PAYIN " + s });
+        return res.status(500).json({ success: false, message: "PAYIN " + s });
 
       case "NOCOMPLETED":
         console.log("PAYIN", s);
@@ -226,7 +226,7 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
           provider_reference:
             providerTransactionId || transaction.provider_reference,
         });
-        return res.status(200).json({ success: false, message: "PAYIN " + s });
+        return res.status(500).json({ success: false, message: "PAYIN " + s });
 
       case "COMPLETED":
         console.log("SUCCESS_PAYIN.");
@@ -361,7 +361,7 @@ app.post("/api/v1/transactions/complete/payout", async (req, res) => {
           provider_reference:
             providerTransactionId || transaction.provider_reference,
         });
-        return res.status(200).json({ success: false, message: "PAYOUT " + s });
+        return res.status(500).json({ success: false, message: "PAYOUT " + s });
 
       case "REJECTED":
         console.log("PAYOUT", s);
@@ -370,7 +370,7 @@ app.post("/api/v1/transactions/complete/payout", async (req, res) => {
           provider_reference:
             providerTransactionId || transaction.provider_reference,
         });
-        return res.status(200).json({ success: false, message: "PAYOUT " + s });
+        return res.status(500).json({ success: false, message: "PAYOUT " + s });
       case "NOCOMPLETED":
         console.log("PAYOUT", s);
         await transaction.update({
@@ -378,7 +378,7 @@ app.post("/api/v1/transactions/complete/payout", async (req, res) => {
           provider_reference:
             providerTransactionId || transaction.provider_reference,
         });
-        return res.status(200).json({ success: false, message: "PAYOUT " + s });
+        return res.status(500).json({ success: false, message: "PAYOUT " + s });
       case "COMPLETED":
         console.log("SUCCESS_PAYIN_SUCCESS_PAYOUT.");
         await transaction.update({
