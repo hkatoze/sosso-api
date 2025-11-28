@@ -4,9 +4,11 @@ const { Transaction, User, Operator, Device, ApiProvider } =
 const { ValidationError, Op } = require("sequelize");
 const auth = require("../auth/auth");
 const { v4: uuidv4 } = require("uuid");
-const afri = require("../routes/merchandApiEndpoints");
-const { triggerPayout } = require("../utilsFunctions/transactionsTrigger");
+const pawapay = require("../routes/pawapay/pawapayControllers");
+const ligdicash = require("../routes/ligdicash/ligdiControllers");
 const { matchingOperator } = require("../utilsFunctions/matchingOperator");
+const AGGREGATOR_USED= 'pawapay';
+
 module.exports = (app) => {
   // Étape 1: INITIER un transfert (PAYIN)
   app.post("/api/v1/transactions/", async (req, res) => {
@@ -19,6 +21,7 @@ module.exports = (app) => {
         receiver_operator_id,
         receiver_phone,
         amount,
+        otp,
       } = req.body;
 
       if (
@@ -49,6 +52,81 @@ module.exports = (app) => {
       const fees = parseFloat(amount) * 0.01; // 1% pour l’instant
       const amount_received = parseFloat(amount) - fees;
 
+      // 2️⃣ Appeler  PAYIN
+      const payinPayload =
+        AGGREGATOR_USED == "pawapay"
+          ? {
+              depositId: reference,
+              amount: parseFloat(amount).toString(),
+              currency: "XOF",
+              payer: {
+                type: "MMO",
+                accountDetails: {
+                  phoneNumber: "226" + sender_phone,
+                  provider: matchingOperator(senderOperator.short_code),
+                },
+              },
+            }
+          : {
+              commande: {
+                invoice: {
+                  items: [
+                    {
+                      name: "Transfert mobile",
+                      quantity: 1,
+                      unit_price: parseFloat(amount),
+                      total_price: parseFloat(amount),
+                    },
+                  ],
+                  total_amount: parseFloat(amount),
+                  devise: "XOF",
+                  customer: "226" + sender_phone,
+                  external_id: "",
+                  otp: otp,
+                },
+                store: {
+                  name: "Sosso",
+                  website_url: "https://www.sosso.kuurasys.com",
+                },
+                actions: {
+                  callback_url:
+                    "https://sosso-api.onrender.com/api/v1/transactions/complete/payin",
+                },
+                custom_data: {
+                  transaction_id: reference,
+                },
+              },
+            };
+
+      const result =
+        AGGREGATOR_USED == "pawapay"
+          ? await pawapay.createPawapayPayin(payinPayload)
+          : await ligdicash.createLigdiPayinWithOTP(payinPayload);
+      console.log(result);
+
+      if (!result.success) {
+        return res.status(500).json({
+          success: false,
+          message: "Aggregator failed",
+          error: result.message,
+        });
+      }
+
+      if (result.data.status == "REJECTED") {
+        return res.status(201).json({
+          success: true,
+          message: "PAYIN failed.",
+          data: result.data,
+        });
+      }
+
+      if (result.data.response_code == "01") {
+           return res.status(201).json({
+             success: true,
+             message: "PAYIN failed.",
+             data: result.data,
+           });
+         }
       // 1️⃣ Créer la transaction locale (status = pending)
       const transaction = await Transaction.create({
         reference,
@@ -62,61 +140,12 @@ module.exports = (app) => {
         fees,
         amount_received,
         total_amount: parseFloat(amount) + fees,
-        status: "pending",
+        status: "processing_payin",
+        provider_reference: result.data.providerTransactionId,
+        metadata: result.data,
         transaction_datetime: new Date(),
       });
 
-      // 2️⃣ Appeler  PAYIN
-      const payinPayload = {
-        depositId: reference,
-        amount: parseFloat(amount).toString(),
-        currency: "XOF",
-        payer:{
-          type: "MMO",
-            accountDetails: {
-                phoneNumber: "226"+sender_phone,
-                provider: matchingOperator(senderOperator.short_code)
-            }
-        },
-
-       
-      };
-
-
-      const result = await afri.createPayin(payinPayload);
-      console.log(result);
-
-      if (!result.success) {
-        transaction.status = "failed";
-        await transaction.save();
-        return res.status(500).json({
-          success: false,
-          message: "Échec du PAYIN",
-          error: result.message,
-        });
-      }
-
-      if(result.data.status =="REJECTED"){
-        await transaction.update({
-        provider_reference: result.data.providerTransactionId,
-        metadata: result.data,
-        status: "failed",
-      });
-      return res.status(201).json({
-        success: true,
-        message:
-          "PAYIN failed.",
-        data: result.data,
-      });
-      }
-
-      // 3️⃣ Mise à jour transaction locale avec les infos AfribaPAY
-      await transaction.update({
-        provider_reference: result.data.providerTransactionId,
-        metadata: result.data,
-        status: "processing_payin",
-      });
-     console.log("REFERENCE CREE: "+reference);
       return res.status(201).json({
         success: true,
         message:
@@ -135,8 +164,8 @@ module.exports = (app) => {
 
 app.post("/api/v1/transactions/complete/payin", async (req, res) => {
   try {
-    const { depositId, status, providerTransactionId } = req.body;
-    const reference = depositId;
+    const { depositId,transaction_id, status, providerTransactionId } = req.body;
+    const reference = depositId || transaction_id;
 
     if (!reference) {
       console.log("Référence manquante.");
@@ -165,63 +194,106 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
       case "ACCEPTED":
         console.log("PAYIN", s);
         // Acknowledge accepted; not final
-        await transaction.update({ provider_reference: providerTransactionId || transaction.provider_reference });
+        await transaction.update({
+          provider_reference:
+            providerTransactionId || transaction.provider_reference,
+        });
         return res.status(200).json({ success: true, message: "PAYIN " + s });
       case "SUBMITTED":
         console.log("PAYIN", s);
         return res.status(200).json({ success: false, message: "PAYIN " + s });
       case "FAILED":
         console.log("PAYIN", s);
-        await transaction.update({ status: "payin_failed", provider_reference: providerTransactionId || transaction.provider_reference });
+        await transaction.update({
+          status: "payin_failed",
+          provider_reference:
+            providerTransactionId || transaction.provider_reference,
+        });
         return res.status(200).json({ success: false, message: "PAYIN " + s });
       case "REJECTED":
         console.log("PAYIN", s);
-        await transaction.update({ status: "payin_failed", provider_reference: providerTransactionId || transaction.provider_reference });
+        await transaction.update({
+          status: "payin_failed",
+          provider_reference:
+            providerTransactionId || transaction.provider_reference,
+        });
         return res.status(200).json({ success: false, message: "PAYIN " + s });
-        
+
+      case "NOCOMPLETED":
+        console.log("PAYIN", s);
+        await transaction.update({
+          status: "payin_failed",
+          provider_reference:
+            providerTransactionId || transaction.provider_reference,
+        });
+        return res.status(200).json({ success: false, message: "PAYIN " + s });
+
       case "COMPLETED":
         console.log("SUCCESS_PAYIN.");
         await transaction.update({
           status: "success_payin",
-          provider_reference: providerTransactionId || transaction.provider_reference,
+          provider_reference:
+            providerTransactionId || transaction.provider_reference,
         });
         break; // continuer pour déclencher le payout
       default:
         console.warn("Statut PAYIN inconnu:", status);
-        return res.status(400).json({ success: false, message: "Statut inconnu: " + status });
+        return res
+          .status(400)
+          .json({ success: false, message: "Statut inconnu: " + status });
     }
 
     // --- créer le PAYOUT (après "COMPLETED")
     const receiverOperator = await Operator.findByPk(transaction.receiver_operator_id);
 
-    const payoutPayload = {
-      payoutId: transaction.reference,
-      amount: parseFloat(transaction.amount).toString(),
-      currency: "XOF",
-      recipient: {
-        type: "MMO",
-        accountDetails: {
-          phoneNumber: "226" + transaction.receiver_phone,
-          provider: matchingOperator(receiverOperator.short_code)
-        }
-      }
-    };
+    const payoutPayload =
+      AGGREGATOR_USED == "pawapay"
+        ? {
+            payoutId: transaction.reference,
+            amount: parseFloat(transaction.amount).toString(),
+            currency: "XOF",
+            recipient: {
+              type: "MMO",
+              accountDetails: {
+                phoneNumber: "226" + transaction.receiver_phone,
+                provider: matchingOperator(receiverOperator.short_code),
+              },
+            },
+          }
+        : {
+            commande: {
+              amount: parseFloat(transaction.amount),
+              description: "Transfert mobile",
+              customer: "226" + transaction.receiver_phone,
+              custom_data: {
+                transaction_id: transaction.reference,
+              },
+              callback_url:
+                "https://sosso-api.onrender.com/api/v1/transactions/complete/payout",
+            },
+          };
 
-    const result = await afri.createPayout(payoutPayload);
+    const result =
+      AGGREGATOR_USED == "pawapay"
+        ? await pawapay.createPawapayPayout(payoutPayload)
+        : await ligdicash.createLigdiPayout(payoutPayload);
 
     if (!result || !result.success) {
-      console.log("FAILED_PAYOUT.", result && result.message);
+      console.log(
+        "Aggregator failed.",
+        result && result.message && result.response_text
+      );
       await transaction.update({
         status: "success_payin_failed_payout",
         metadata: result ? result.data : { error: "no result" }
       });
       return res.status(500).json({
         success: false,
-        message: "Échec du PAYOUT.",
-        data: result ? result.message : "No result from payout"
+        message: "Aggregator failed.",
+        data: result ? result.message : "No result from payout",
       });
     }
-
+ 
     console.log("SUCCESS_PAYIN_PROCESSING_PAYOUT.");
     await transaction.update({
       status: "success_payin_processing_payout",
@@ -248,8 +320,8 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
 
 app.post("/api/v1/transactions/complete/payout", async (req, res) => {
   try {
-    const { payoutId, status, providerTransactionId } = req.body;
-    const reference = payoutId;
+    const { payoutId,transaction_id, status, providerTransactionId } = req.body;
+    const reference = payoutId || transaction_id;
 
     if (!reference) {
       console.log("Référence manquante.");
@@ -273,7 +345,10 @@ app.post("/api/v1/transactions/complete/payout", async (req, res) => {
     switch (s) {
       case "ACCEPTED":
         console.log("PAYOUT", s);
-        await transaction.update({ provider_reference: providerTransactionId || transaction.provider_reference });
+        await transaction.update({
+          provider_reference:
+            providerTransactionId || transaction.provider_reference,
+        });
         return res.status(200).json({ success: true, message: "PAYOUT " + s });
       case "SUBMITTED":
       case "ENQUEUED":
@@ -283,7 +358,8 @@ app.post("/api/v1/transactions/complete/payout", async (req, res) => {
         console.log("PAYOUT", s);
         await transaction.update({
           status: "success_payin_failed_payout",
-          provider_reference: providerTransactionId || transaction.provider_reference
+          provider_reference:
+            providerTransactionId || transaction.provider_reference,
         });
         return res.status(200).json({ success: false, message: "PAYOUT " + s });
 
@@ -291,23 +367,35 @@ app.post("/api/v1/transactions/complete/payout", async (req, res) => {
         console.log("PAYOUT", s);
         await transaction.update({
           status: "success_payin_failed_payout",
-          provider_reference: providerTransactionId || transaction.provider_reference
+          provider_reference:
+            providerTransactionId || transaction.provider_reference,
+        });
+        return res.status(200).json({ success: false, message: "PAYOUT " + s });
+      case "NOCOMPLETED":
+        console.log("PAYOUT", s);
+        await transaction.update({
+          status: "success_payin_failed_payout",
+          provider_reference:
+            providerTransactionId || transaction.provider_reference,
         });
         return res.status(200).json({ success: false, message: "PAYOUT " + s });
       case "COMPLETED":
         console.log("SUCCESS_PAYIN_SUCCESS_PAYOUT.");
         await transaction.update({
           status: "success_payin_success_payout",
-          provider_reference: providerTransactionId || transaction.provider_reference
+          provider_reference:
+            providerTransactionId || transaction.provider_reference,
         });
         return res.status(200).json({
           success: true,
           message: "Payin & Payout réussie",
-          data: transaction
+          data: transaction,
         });
       default:
         console.warn("Statut PAYOUT inconnu:", status);
-        return res.status(400).json({ success: false, message: "Statut inconnu: " + status });
+        return res
+          .status(400)
+          .json({ success: false, message: "Statut inconnu: " + status });
     }
 
   } catch (error) {
