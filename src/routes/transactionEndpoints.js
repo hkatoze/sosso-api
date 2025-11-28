@@ -193,11 +193,7 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
     switch (s) {
       case "ACCEPTED":
         console.log("PAYIN", s);
-        // Acknowledge accepted; not final
-        await transaction.update({
-          provider_reference:
-            providerTransactionId || transaction.provider_reference,
-        });
+    
         return res.status(200).json({ success: true, message: "PAYIN " + s });
       case "SUBMITTED":
         console.log("PAYIN", s);
@@ -206,16 +202,14 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
         console.log("PAYIN", s);
         await transaction.update({
           status: "payin_failed",
-          provider_reference:
-            providerTransactionId || transaction.provider_reference,
+        
         });
         return res.status(500).json({ success: false, message: "PAYIN " + s });
       case "REJECTED":
         console.log("PAYIN", s);
         await transaction.update({
           status: "payin_failed",
-          provider_reference:
-            providerTransactionId || transaction.provider_reference,
+         
         });
         return res.status(500).json({ success: false, message: "PAYIN " + s });
 
@@ -223,8 +217,7 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
         console.log("PAYIN", s);
         await transaction.update({
           status: "payin_failed",
-          provider_reference:
-            providerTransactionId || transaction.provider_reference,
+       
         });
         return res.status(500).json({ success: false, message: "PAYIN " + s });
 
@@ -232,8 +225,7 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
         console.log("SUCCESS_PAYIN.");
         await transaction.update({
           status: "success_payin",
-          provider_reference:
-            providerTransactionId || transaction.provider_reference,
+    
         });
         break; // continuer pour déclencher le payout
       default:
@@ -279,7 +271,7 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
         : await ligdicash.createLigdiPayout(payoutPayload);
 
    
-   console.log("================RESULT:",result);
+
         if (!result || !result.success) {
       console.log(
         "Aggregator failed.",
@@ -287,7 +279,7 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
       );
       await transaction.update({
         status: "success_payin_failed_payout",
-        metadata: result ? result.data : { error: "no result" }
+
       });
       return res.status(500).json({
         success: false,
@@ -299,8 +291,7 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
     console.log("SUCCESS_PAYIN_PROCESSING_PAYOUT.");
     await transaction.update({
       status: "success_payin_processing_payout",
-      provider_reference: result.data.providerTransactionId || transaction.provider_reference,
-      metadata: result.data
+ 
     });
 
     return res.status(200).json({
