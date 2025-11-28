@@ -278,7 +278,9 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
         ? await pawapay.createPawapayPayout(payoutPayload)
         : await ligdicash.createLigdiPayout(payoutPayload);
 
-    if (!result || !result.success) {
+   
+   console.log("================RESULT:",result);
+        if (!result || !result.success) {
       console.log(
         "Aggregator failed.",
         result && result.message && result.response_text
