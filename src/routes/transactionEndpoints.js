@@ -224,8 +224,7 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
       case "COMPLETED":
         console.log("SUCCESS_PAYIN.");
         await transaction.update({
-          status: "success_payin",
-    
+          status: "success_payin_processing_payout",
         });
         break; // continuer pour déclencher le payout
       default:
@@ -288,11 +287,7 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
       });
     }
  
-    console.log("SUCCESS_PAYIN_PROCESSING_PAYOUT.");
-    await transaction.update({
-      status: "success_payin_processing_payout",
- 
-    });
+    
 
     return res.status(200).json({
       success: true,
@@ -493,10 +488,7 @@ app.post("/api/v1/transactions/complete/refund", async (req, res) => {
     switch (s) {
       case "ACCEPTED":
         console.log("REFUND ACCEPTED");
-        await transaction.update({
-          status: "success_payin_failed_payout_processing_payout",
-   
-        });
+
         return res
           .status(200)
           .json({ success: true, message: "REFUND ACCEPTED" });
