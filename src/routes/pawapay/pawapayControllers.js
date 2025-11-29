@@ -86,7 +86,13 @@ async function createPawapayPayout(payload) {
     data: payload,
   });
 }
-
+async function createPawapayRefund(payload) {
+  return await _pawapayRequest({
+    method: "POST",
+    url: "/refunds",
+    data: payload,
+  });
+}
 
 
 module.exports = {
@@ -98,4 +104,5 @@ module.exports = {
   createPawapayWalletPayinWithOTP,
   // payout
   createPawapayPayout,
+  createPawapayRefund,
 };

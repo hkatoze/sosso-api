@@ -83,7 +83,13 @@ async function createLigdiPayoutForLigdiClient(payload) {
     data: payload,
   });
 }
-
+async function createLigdiRefund(payload) {
+  return await _ligdiRequest({
+    method: "POST",
+    url: "/straight/payout",
+    data: payload,
+  });
+}
 
 // ------------------------
 //CHECK STATUS
@@ -123,5 +129,6 @@ module.exports = {
   checkLigdiClientPayoutStatus,
   // payout
   createLigdiPayout,
-  createLigdiPayoutForLigdiClient
+  createLigdiPayoutForLigdiClient,
+  createLigdiRefund,
 };

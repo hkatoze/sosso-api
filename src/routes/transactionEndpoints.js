@@ -181,7 +181,7 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
     }
 
     // idempotence : si la transaction a déjà été traitée comme payin réussi, on ack sans relancer
-    const alreadyProcessed = ["success_payin", "success_payin_processing_payout", "success_payin_failed_payout", "success_payin_success_payout"]
+    const alreadyProcessed = ["success_payin", "success_payin_processing_payout", "success_payin_failed_payout", "success_payin_success_payout",]
       .includes(transaction.status);
     if (alreadyProcessed) {
       console.log("Callback reçu pour transaction déjà traitée:", transaction.reference, transaction.status);
@@ -313,83 +313,130 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
 
 app.post("/api/v1/transactions/complete/payout", async (req, res) => {
   try {
-    const { payoutId,transaction_id, status, providerTransactionId } = req.body;
+    const { payoutId, transaction_id, status, providerTransactionId } =
+      req.body;
     const reference = payoutId || transaction_id;
 
     if (!reference) {
       console.log("Référence manquante.");
-      return res.status(400).json({ success: false, message: "Référence manquante." });
+      return res
+        .status(400)
+        .json({ success: false, message: "Référence manquante." });
     }
 
-    const transaction = await Transaction.findOne({ where: { reference: reference.toUpperCase() } });
+    const transaction = await Transaction.findOne({
+      where: { reference: reference.toUpperCase() },
+    });
     if (!transaction) {
       console.log("Transaction introuvable.");
-      return res.status(404).json({ success: false, message: "Transaction introuvable." });
+      return res
+        .status(404)
+        .json({ success: false, message: "Transaction introuvable." });
     }
 
     // idempotence : si déjà finalisé comme success_payin_success_payout, ack
     if (transaction.status === "success_payin_success_payout") {
-      console.log("Payout callback pour transaction déjà finalisée:", transaction.reference);
-      return res.status(200).json({ success: true, message: "Already finalized", data: transaction });
-    }
-
-    const s = (status || "").toString().toUpperCase().trim();
-
-    switch (s) {
-      case "ACCEPTED":
-        console.log("PAYOUT", s);
-        await transaction.update({
-          provider_reference:
-            providerTransactionId || transaction.provider_reference,
-        });
-        return res.status(200).json({ success: true, message: "PAYOUT " + s });
-      case "SUBMITTED":
-      case "ENQUEUED":
-        console.log("PAYOUT", s);
-        return res.status(200).json({ success: false, message: "PAYOUT " + s });
-      case "FAILED":
-        console.log("PAYOUT", s);
-        await transaction.update({
-          status: "success_payin_failed_payout",
-          provider_reference:
-            providerTransactionId || transaction.provider_reference,
-        });
-        return res.status(500).json({ success: false, message: "PAYOUT " + s });
-
-      case "REJECTED":
-        console.log("PAYOUT", s);
-        await transaction.update({
-          status: "success_payin_failed_payout",
-          provider_reference:
-            providerTransactionId || transaction.provider_reference,
-        });
-        return res.status(500).json({ success: false, message: "PAYOUT " + s });
-      case "NOCOMPLETED":
-        console.log("PAYOUT", s);
-        await transaction.update({
-          status: "success_payin_failed_payout",
-          provider_reference:
-            providerTransactionId || transaction.provider_reference,
-        });
-        return res.status(500).json({ success: false, message: "PAYOUT " + s });
-      case "COMPLETED":
-        console.log("SUCCESS_PAYIN_SUCCESS_PAYOUT.");
-        await transaction.update({
-          status: "success_payin_success_payout",
-          provider_reference:
-            providerTransactionId || transaction.provider_reference,
-        });
-        return res.status(200).json({
+      console.log(
+        "Payout callback pour transaction déjà finalisée:",
+        transaction.reference
+      );
+      return res
+        .status(200)
+        .json({
           success: true,
-          message: "Payin & Payout réussie",
+          message: "Already finalized",
           data: transaction,
         });
-      default:
-        console.warn("Statut PAYOUT inconnu:", status);
-        return res
-          .status(400)
-          .json({ success: false, message: "Statut inconnu: " + status });
     }
+const s = (status || "").toString().toUpperCase().trim();
+
+switch (s) {
+  case "ACCEPTED":
+    console.log("PAYOUT ACCEPTED");
+    return res.status(200).json({ success: true, message: "PAYOUT ACCEPTED" });
+
+  case "SUBMITTED":
+     console.log("PAYOUT", s);
+    return res.status(200).json({ success: false, message: "PAYOUT " + s });
+  case "ENQUEUED":
+    console.log("PAYOUT", s);
+    return res.status(200).json({ success: false, message: "PAYOUT " + s });
+
+  case "FAILED":
+  case "REJECTED":
+  case "NOCOMPLETED":
+    console.log("PAYOUT FAILED → Lancement du remboursement…");
+    await transaction.update({
+      status: "success_payin_failed_payout",
+    });
+    // --- REMBOURSEMENT ---
+    const refundReference = uuidv4().slice(0, 36).toUpperCase();
+
+    const refundPayload =
+      AGGREGATOR_USED == "pawapay"
+        ? {
+            refundId: refundReference,
+            depositId: transaction.reference,
+          }
+        : {
+            commande: {
+              amount: parseFloat(transaction.amount),
+              description: "Transfert mobile-Remboursement",
+              customer: "226" + transaction.sender_phone,
+              custom_data: { transaction_id: transaction.reference },
+              callback_url:
+                "https://sosso-api.onrender.com/api/v1/transactions/complete/refund",
+            },
+          };
+
+    const refundResult =
+      AGGREGATOR_USED == "pawapay"
+        ? await pawapay.createPawapayRefund(refundPayload)
+        : await ligdicash.createLigdiRefund(refundPayload);
+
+    if (!refundResult || !refundResult.success) {
+      console.log("Refund failed");
+      await transaction.update({
+        status: "success_payin_failed_payout_failed_refund",
+      });
+      return res.status(500).json({
+        success: false,
+        message: "Refund failed",
+        data: refundResult || null,
+      });
+    }
+     await transaction.update({
+       reference: refundReference,
+     });
+    console.log("Refund initiated successfully");
+    await transaction.update({
+      status: "success_payin_failed_payout_processing_refund",
+    });
+
+    return res.status(200).json({
+      success: false,
+      message: "PAYOUT failed → REFUND initiated",
+      data: refundResult,
+    });
+
+  case "COMPLETED":
+    console.log("SUCCESS_PAYIN_SUCCESS_PAYOUT");
+    await transaction.update({
+      status: "success_payin_success_payout",
+    });
+    return res.status(200).json({
+      success: true,
+      message: "Payin & Payout réussie",
+      data: transaction,
+    });
+
+  default:
+    console.warn("Statut PAYOUT inconnu:", status);
+    return res.status(400).json({
+      success: false,
+      message: "Statut inconnu: " + status,
+    });
+}
 
   } catch (error) {
     console.error("Erreur /transactions/complete/payout:", error);
@@ -402,9 +449,95 @@ app.post("/api/v1/transactions/complete/payout", async (req, res) => {
 });
 
 
-  app.post("/api/v1/transactions/complete/refund", async (req, res) => {
-    
-  });
+app.post("/api/v1/transactions/complete/refund", async (req, res) => {
+  try {
+    const { refundId, transaction_id, status, providerTransactionId } =
+      req.body;
+    const reference = refundId || transaction_id;
+
+    if (!reference) {
+      console.log("Référence manquante.");
+      return res
+        .status(400)
+        .json({ success: false, message: "Référence manquante." });
+    }
+
+    console.log("REFERENCE RECU:", reference);
+    const transaction = await Transaction.findOne({
+      where: { reference: reference.toUpperCase() },
+    });
+
+    if (!transaction) {
+      console.log("Transaction introuvable.");
+      return res
+        .status(404)
+        .json({ success: false, message: "Transaction introuvable." });
+    }
+
+    // Idempotence : si le refund est déjà finalisé, OK
+    if (
+      [
+        "success_payin_failed_payout_success_refund",
+        "success_payin_failed_payout_failed_refund",
+      ].includes(transaction.status)
+    ) {
+      return res.status(200).json({
+        success: true,
+        message: "Refund already processed",
+        data: { status: transaction.status },
+      });
+    }
+
+    const s = (status || "").toString().toUpperCase().trim();
+
+    switch (s) {
+      case "ACCEPTED":
+        console.log("REFUND ACCEPTED");
+        await transaction.update({
+          status: "success_payin_failed_payout_processing_payout",
+   
+        });
+        return res
+          .status(200)
+          .json({ success: true, message: "REFUND ACCEPTED" });
+
+      case "REJECTED":
+      case "FAILED":
+      case "NOCOMPLETED":
+        console.log("REFUND FAILED:", s);
+        await transaction.update({
+          status: "success_payin_failed_payout_failed_refund",
+     
+        });
+        return res
+          .status(500)
+          .json({ success: false, message: "REFUND FAILED" });
+
+      case "COMPLETED":
+        console.log("REFUND COMPLETED.");
+        await transaction.update({
+          status: "success_payin_failed_payout_success_refund",
+        });
+        return res
+          .status(200)
+          .json({ success: true, message: "REFUND COMPLETED" });
+
+      default:
+        console.warn("Statut REFUND inconnu:", status);
+        return res
+          .status(400)
+          .json({ success: false, message: "Statut inconnu: " + status });
+    }
+  } catch (error) {
+    console.error("Erreur /transactions/complete/refund:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Erreur serveur lors du traitement du refund.",
+      data: error.message,
+    });
+  }
+});
+
   /**
    * =====================================================
    *  GET /api/v1/transactions
