@@ -351,15 +351,14 @@ switch (s) {
     return res.status(200).json({ success: true, message: "PAYOUT ACCEPTED" });
 
   case "SUBMITTED":
-     console.log("PAYOUT", s);
+    console.log("PAYOUT", s);
     return res.status(200).json({ success: false, message: "PAYOUT " + s });
   case "ENQUEUED":
     console.log("PAYOUT", s);
     return res.status(200).json({ success: false, message: "PAYOUT " + s });
-
+  case "NOCOMPLETED":
   case "FAILED":
   case "REJECTED":
-  case "NOCOMPLETED":
     console.log("PAYOUT FAILED → Lancement du remboursement…");
     await transaction.update({
       status: "success_payin_failed_payout",
@@ -400,9 +399,9 @@ switch (s) {
         data: refundResult || null,
       });
     }
-     await transaction.update({
-       reference: refundReference,
-     });
+    await transaction.update({
+      reference: refundReference,
+    });
     console.log("Refund initiated successfully");
     await transaction.update({
       status: "success_payin_failed_payout_processing_refund",
