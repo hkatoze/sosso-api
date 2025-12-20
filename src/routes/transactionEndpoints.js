@@ -7,7 +7,7 @@ const { v4: uuidv4 } = require("uuid");
 const pawapay = require("../routes/pawapay/pawapayControllers");
 const ligdicash = require("../routes/ligdicash/ligdiControllers");
 const { matchingOperator } = require("../utilsFunctions/matchingOperator");
-const AGGREGATOR_USED= 'pawapay';
+const AGGREGATOR_USED= 'ligdicash';
 
 module.exports = (app) => {
   // Étape 1: INITIER un transfert (PAYIN)
