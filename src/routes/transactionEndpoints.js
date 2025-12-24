@@ -97,13 +97,6 @@ module.exports = (app) => {
         });
       }
 
-      if (result.data.status.toString().toUpperCase().trim() == "REJECTED") {
-        return res.status(500).json({
-          success: true,
-          message: "PAYIN failed.",
-          data: result.data,
-        });
-      }
 
       if (result.data.response_code == "01") {
            return res.status(500).json({
