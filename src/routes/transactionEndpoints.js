@@ -53,37 +53,41 @@ module.exports = (app) => {
       const amount_received = parseFloat(amount) - fees;
 
       // 2️⃣ Appeler  PAYIN
-      const payinPayload =
-           {
-              commande: {
-                invoice: {
-                  items: [
-                    {
-                      name: "Transfert mobile",
-                      quantity: 1,
-                      unit_price: parseFloat(amount),
-                      total_price: parseFloat(amount),
-                    },
-                  ],
-                  total_amount: parseFloat(amount),
-                  devise: "XOF",
-                  customer: "226" + sender_phone,
-                  external_id: "",
-                  otp: otp,
-                },
-                store: {
-                  name: "Sosso",
-                  website_url: "https://www.sosso.kuurasys.com",
-                },
-                actions: {
-                  callback_url:
-                    "https://sosso-api.onrender.com/api/v1/transactions/complete/payin",
-                },
-                custom_data: {
-                  transaction_id: reference,
-                },
+      const payinPayload = {
+        commande: {
+          invoice: {
+            items: [
+              {
+                name: "Transfert mobile",
+                quantity: 1,
+                unit_price: parseFloat(amount),
+                total_price: parseFloat(amount),
               },
-            };
+            ],
+            total_amount: parseFloat(amount),
+            devise: "XOF",
+            customer: "226" + sender_phone,
+            external_id: "",
+            otp: otp,
+          },
+          store: {
+            name: "Sosso",
+            website_url: "https://www.sosso.kuurasys.com",
+          },
+          actions: {
+            cancel_url:
+              "https://sosso-api.onrender.com/api/v1/transactions/complete/payin",
+            return_url:
+              "https://sosso-api.onrender.com/api/v1/transactions/complete/payin",
+            callback_url:
+              "https://sosso-api.onrender.com/api/v1/transactions/complete/payin",
+          },
+          custom_data: {
+            transaction_id: reference,
+            order_id: reference,
+          },
+        },
+      };
 
       const result =
         await ligdicash.createLigdiPayinWithOTP(payinPayload);
@@ -96,7 +100,6 @@ module.exports = (app) => {
           error: result.message,
         });
       }
-
 
       if (result.data.response_code == "01") {
            return res.status(500).json({
