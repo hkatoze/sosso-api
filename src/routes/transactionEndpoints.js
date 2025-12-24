@@ -54,20 +54,7 @@ module.exports = (app) => {
 
       // 2️⃣ Appeler  PAYIN
       const payinPayload =
-        AGGREGATOR_USED == "pawapay"
-          ? {
-              depositId: reference,
-              amount: parseFloat(amount).toString(),
-              currency: "XOF",
-              payer: {
-                type: "MMO",
-                accountDetails: {
-                  phoneNumber: "226" + sender_phone,
-                  provider: matchingOperator(senderOperator.short_code),
-                },
-              },
-            }
-          : {
+           {
               commande: {
                 invoice: {
                   items: [
@@ -99,9 +86,7 @@ module.exports = (app) => {
             };
 
       const result =
-        AGGREGATOR_USED == "pawapay"
-          ? await pawapay.createPawapayPayin(payinPayload)
-          : await ligdicash.createLigdiPayinWithOTP(payinPayload);
+        await ligdicash.createLigdiPayinWithOTP(payinPayload);
       console.log(result);
 
       if (!result.success) {
@@ -112,7 +97,7 @@ module.exports = (app) => {
         });
       }
 
-      if (result.data.status == "REJECTED") {
+      if (result.data.status.toString().toUpperCase().trim() == "REJECTED") {
         return res.status(500).json({
           success: true,
           message: "PAYIN failed.",
@@ -164,8 +149,8 @@ module.exports = (app) => {
 
 app.post("/api/v1/transactions/complete/payin", async (req, res) => {
   try {
-    const { depositId,transaction_id, status, providerTransactionId } = req.body;
-    const reference = depositId || transaction_id;
+    const { transaction_id, status } = req.body;
+    const reference = transaction_id;
 
     if (!reference) {
       console.log("Référence manquante.");
@@ -193,7 +178,7 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
     switch (s) {
       case "ACCEPTED":
         console.log("PAYIN", s);
-    
+
         return res.status(200).json({ success: true, message: "PAYIN " + s });
       case "SUBMITTED":
         console.log("PAYIN", s);
@@ -202,14 +187,12 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
         console.log("PAYIN", s);
         await transaction.update({
           status: "payin_failed",
-        
         });
         return res.status(500).json({ success: false, message: "PAYIN " + s });
       case "REJECTED":
         console.log("PAYIN", s);
         await transaction.update({
           status: "payin_failed",
-         
         });
         return res.status(500).json({ success: false, message: "PAYIN " + s });
 
@@ -217,15 +200,17 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
         console.log("PAYIN", s);
         await transaction.update({
           status: "payin_failed",
-       
         });
         return res.status(500).json({ success: false, message: "PAYIN " + s });
-
+      case "PENDING":
+        console.log("PENDING_PAYIN.");
+        return res.status(201).json({ success: true, message: "PAYIN " + s });
       case "COMPLETED":
         console.log("SUCCESS_PAYIN.");
         await transaction.update({
           status: "success_payin_processing_payout",
         });
+
         break; // continuer pour déclencher le payout
       default:
         console.warn("Statut PAYIN inconnu:", status);
@@ -238,20 +223,7 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
     const receiverOperator = await Operator.findByPk(transaction.receiver_operator_id);
 
     const payoutPayload =
-      AGGREGATOR_USED == "pawapay"
-        ? {
-            payoutId: transaction.reference,
-            amount: parseFloat(transaction.amount).toString(),
-            currency: "XOF",
-            recipient: {
-              type: "MMO",
-              accountDetails: {
-                phoneNumber: "226" + transaction.receiver_phone,
-                provider: matchingOperator(receiverOperator.short_code),
-              },
-            },
-          }
-        : {
+     {
             commande: {
               amount: parseFloat(transaction.amount),
               description: "Transfert mobile",
@@ -264,10 +236,7 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
             },
           };
 
-    const result =
-      AGGREGATOR_USED == "pawapay"
-        ? await pawapay.createPawapayPayout(payoutPayload)
-        : await ligdicash.createLigdiPayout(payoutPayload);
+    const result =  await ligdicash.createLigdiPayout(payoutPayload);
 
    
 
@@ -288,7 +257,6 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
     }
  
     
-
     return res.status(200).json({
       success: true,
       message: "PAYOUT initié avec succès.",
@@ -308,9 +276,9 @@ app.post("/api/v1/transactions/complete/payin", async (req, res) => {
 
 app.post("/api/v1/transactions/complete/payout", async (req, res) => {
   try {
-    const { payoutId, transaction_id, status, providerTransactionId } =
+    const { transaction_id, status } =
       req.body;
-    const reference = payoutId || transaction_id;
+    const reference =  transaction_id;
 
     if (!reference) {
       console.log("Référence manquante.");
@@ -367,12 +335,7 @@ switch (s) {
     const refundReference = uuidv4().slice(0, 36).toUpperCase();
 
     const refundPayload =
-      AGGREGATOR_USED == "pawapay"
-        ? {
-            refundId: refundReference,
-            depositId: transaction.reference,
-          }
-        : {
+     {
             commande: {
               amount: parseFloat(transaction.amount),
               description: "Transfert mobile-Remboursement",
@@ -383,10 +346,7 @@ switch (s) {
             },
           };
 
-    const refundResult =
-      AGGREGATOR_USED == "pawapay"
-        ? await pawapay.createPawapayRefund(refundPayload)
-        : await ligdicash.createLigdiRefund(refundPayload);
+    const refundResult = await ligdicash.createLigdiRefund(refundPayload);
 
     if (!refundResult || !refundResult.success) {
       console.log("Refund failed");
@@ -445,9 +405,9 @@ switch (s) {
 
 app.post("/api/v1/transactions/complete/refund", async (req, res) => {
   try {
-    const { refundId, transaction_id, status, providerTransactionId } =
+    const { transaction_id, status } =
       req.body;
-    const reference = refundId || transaction_id;
+    const reference = transaction_id;
 
     if (!reference) {
       console.log("Référence manquante.");
